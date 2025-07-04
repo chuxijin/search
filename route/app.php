@@ -14,5 +14,11 @@ Route::get('think', function () {
     return 'hello,ThinkPHP6!';
 });
 
+// API路由组
+Route::group('api', function () {
+    // 文件整理接口
+    Route::post('tool/organizeFiles', 'app\api\controller\Tool@organizeFiles');
+});
+
 
 

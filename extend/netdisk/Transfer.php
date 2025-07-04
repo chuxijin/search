@@ -44,6 +44,7 @@ class Transfer
             'expired_type' => $urlData['expired_type'] ?? input('expired_type') ?? 1,
             'ad_fid' => $urlData['ad_fid'] ?? input('ad_fid') ?? "",
             'stoken' => $urlData['stoken'] ?? '',
+            'to_pdir_fid' => $urlData['to_pdir_fid'] ?? '',  // 支持指定转存目录
         ];
 
         if (strpos($url, '?entry=') !== false) {

@@ -17,7 +17,7 @@ class QuarkPlugin
     public function __construct()
     {
         // 第三方转存接口地址
-        $this->url = "";
+        $this->url = "https://duanju.life";
         $this->model = new SourceModel();
         $this->SourceLogModel = new SourceLogModel();
         $this->source_category_id = 0;
@@ -127,11 +127,21 @@ class QuarkPlugin
             return;
         }
 
+        // 根据资源创建时间确定目标文件夹
+        $target_folder_id = $this->createDateFolders($value);
+        if ($target_folder_id === false) {
+            if (!empty($logId)) {
+                $this->SourceLogModel->editLog($logId, $total_result, 'fail_num', '创建日期文件夹失败');
+            }
+            return;
+        }
+
         $urlData = [
             'expired_type' => 1,  // 1正式资源 2临时资源
             'url' => $url,
             'code' => $value['code'] ?? '',
-            'isType' => $isType
+            'isType' => $isType,
+            'to_pdir_fid' => $target_folder_id  // 设置目标文件夹
         ];
 
         $transfer = new \netdisk\Transfer();
@@ -163,4 +173,31 @@ class QuarkPlugin
             $this->SourceLogModel->editLog($logId, $total_result, 'new_num', '');
         }
     }
+
+    /**
+     * 根据资源创建时间创建年/月/日文件夹结构
+     *
+     * @param array $value 资源信息
+     * @return string|false 返回最终文件夹ID，失败返回false
+     */
+    private function createDateFolders($value)
+    {
+        // 获取资源的创建时间 - 使用统一的时间处理逻辑
+        $create_time = parseTimestamp($value);
+        
+        // 获取基础存储路径
+        $base_folder_id = \Config('qfshop.quark_file');
+        
+        // 使用API控制器的文件夹创建逻辑
+        $toolController = new \app\api\controller\Tool();
+        
+        // 使用反射调用私有方法
+        $reflection = new \ReflectionClass($toolController);
+        $createDateFolderMethod = $reflection->getMethod('createDateFolderStructure');
+        $createDateFolderMethod->setAccessible(true);
+        
+        return $createDateFolderMethod->invoke($toolController, $base_folder_id, $create_time);
+    }
+
+
 }

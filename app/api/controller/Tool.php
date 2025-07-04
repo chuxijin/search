@@ -186,4 +186,230 @@ class Tool extends QfShop
         return jok('临时资源获取成功', $list);
     }
 
+    /**
+     * 按时间整理文件夹中的文件
+     * POST接口：将指定文件夹中的文件按创建时间移动到目标文件夹的年/月/日结构中
+     *
+     * @return void
+     */
+    public function organizeFiles()
+    {
+        $source_folder_id = input('source_folder_id');
+        $target_folder_id = input('target_folder_id');
+        
+        if (empty($source_folder_id) || empty($target_folder_id)) {
+            return jerr('参数不完整，请提供源文件夹ID和目标文件夹ID');
+        }
+        
+        try {
+            // 获取源文件夹中的所有文件
+            $transfer = new \netdisk\Transfer();
+            $sourceFiles = $transfer->getFiles(0, $source_folder_id);
+            
+            if ($sourceFiles['code'] !== 200) {
+                return jerr('获取源文件夹文件列表失败：' . $sourceFiles['message']);
+            }
+            
+            if (empty($sourceFiles['data'])) {
+                return jok('源文件夹为空，无需整理', [
+                    'total_items' => 0,
+                    'moved_items' => 0,
+                    'failed_items' => 0
+                ]);
+            }
+            
+            // 获取所有项目（包括文件和文件夹）
+            $itemsToProcess = $sourceFiles['data'];
+            
+            $totalItems = count($itemsToProcess);
+            $movedItems = 0;
+            $failedItems = 0;
+            $moveResults = [];
+            
+            foreach ($itemsToProcess as $item) {
+                try {
+                    $itemType = $item['file_type'] == 0 ? '文件夹' : '文件';
+                    
+                    // 获取项目的创建时间 - 使用统一的时间处理逻辑
+                    $createTime = parseTimestamp($item);
+                    
+                    // 创建目标日期文件夹结构
+                    $targetDateFolderId = $this->createDateFolderStructure(
+                        $target_folder_id, 
+                        $createTime
+                    );
+                    
+                    if ($targetDateFolderId === false) {
+                        $failedItems++;
+                        $moveResults[] = [
+                            'item_name' => $item['file_name'],
+                            'item_type' => $itemType,
+                            'status' => 'failed',
+                            'reason' => '创建日期文件夹失败'
+                        ];
+                        continue;
+                    }
+                    
+                    // 移动项目到目标文件夹
+                    $moveResult = $this->moveFileToFolder($item['fid'], $targetDateFolderId);
+                    
+                    if ($moveResult['success']) {
+                        $movedItems++;
+                        $moveResults[] = [
+                            'item_name' => $item['file_name'],
+                            'item_type' => $itemType,
+                            'status' => 'success',
+                            'target_path' => date('Y年n月j日', $createTime)
+                        ];
+                    } else {
+                        $failedItems++;
+                        $moveResults[] = [
+                            'item_name' => $item['file_name'],
+                            'item_type' => $itemType,
+                            'status' => 'failed',
+                            'reason' => $moveResult['reason']
+                        ];
+                    }
+                    
+                } catch (\Exception $e) {
+                    $failedItems++;
+                    $moveResults[] = [
+                        'item_name' => $item['file_name'],
+                        'item_type' => isset($itemType) ? $itemType : '未知',
+                        'status' => 'failed',
+                        'reason' => $e->getMessage()
+                    ];
+                }
+            }
+            
+            return jok('项目整理完成', [
+                'total_items' => $totalItems,
+                'moved_items' => $movedItems,
+                'failed_items' => $failedItems,
+                'details' => $moveResults
+            ]);
+            
+        } catch (\Exception $e) {
+            return jerr('项目整理过程中出现错误：' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * 创建日期文件夹结构 (年/月/日)
+     *
+     * @param string $targetFolderId 目标文件夹ID
+     * @param int $timestamp 时间戳
+     * @return string|false 返回最终日期文件夹ID，失败返回false
+     */
+    private function createDateFolderStructure($targetFolderId, $timestamp)
+    {
+        $year = date('Y', $timestamp);
+        $month = date('n', $timestamp) . '月';
+        $day = date('j', $timestamp) . '日';
+        
+        $transfer = new \netdisk\Transfer();
+        
+        // 创建年文件夹
+        $yearFolderId = $this->getOrCreateFolder($transfer, $targetFolderId, $year);
+        if ($yearFolderId === false) {
+            return false;
+        }
+        
+        // 创建月文件夹
+        $monthFolderId = $this->getOrCreateFolder($transfer, $yearFolderId, $month);
+        if ($monthFolderId === false) {
+            return false;
+        }
+        
+        // 创建日文件夹
+        $dayFolderId = $this->getOrCreateFolder($transfer, $monthFolderId, $day);
+        
+        return $dayFolderId;
+    }
+    
+    /**
+     * 获取或创建文件夹
+     *
+     * @param object $transfer Transfer对象
+     * @param string $parentFid 父文件夹ID
+     * @param string $folderName 文件夹名称
+     * @return string|false 返回文件夹ID，失败返回false
+     */
+    private function getOrCreateFolder($transfer, $parentFid, $folderName)
+    {
+        // 获取父文件夹下的文件列表
+        $files = $transfer->getFiles(0, $parentFid);
+        
+        if ($files['code'] !== 200) {
+            return false;
+        }
+        
+        // 检查是否已存在同名文件夹
+        foreach ($files['data'] as $file) {
+            if ($file['file_type'] == 0 && $file['file_name'] == $folderName) {
+                return $file['fid'];
+            }
+        }
+        
+        // 文件夹不存在，创建新文件夹
+        $pan = new \netdisk\pan\QuarkPan();
+        
+        // 模拟input参数
+        $_POST['folder_name'] = $folderName;
+        $_POST['parent_fid'] = $parentFid;
+        
+        $result = $pan->createFolder();
+        
+        // 清理临时参数
+        unset($_POST['folder_name']);
+        unset($_POST['parent_fid']);
+        
+        if ($result['code'] === 200) {
+            return $result['data'];
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 移动文件到指定文件夹
+     *
+     * @param string $fileId 文件ID
+     * @param string $targetFolderId 目标文件夹ID
+     * @return array 返回移动结果
+     */
+    private function moveFileToFolder($fileId, $targetFolderId)
+    {
+        try {
+            $pan = new \netdisk\pan\QuarkPan();
+            
+            // 模拟input参数
+            $_POST['file_ids'] = [$fileId];
+            $_POST['target_folder_id'] = $targetFolderId;
+            
+            $result = $pan->moveFiles();
+            
+            // 清理临时参数
+            unset($_POST['file_ids']);
+            unset($_POST['target_folder_id']);
+            
+            if ($result['code'] === 200) {
+                return [
+                    'success' => true,
+                    'target_path' => $targetFolderId
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'reason' => $result['message']
+                ];
+            }
+            
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'reason' => $e->getMessage()
+            ];
+        }
+    }
 }

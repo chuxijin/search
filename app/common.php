@@ -1121,3 +1121,62 @@ function decryptObject($encryptedObject) {
     $object = json_decode($decryptedJson, true);  // true 转换为关联数组
     return $object;
 }
+
+/**
+ * 解析时间戳 - 统一的时间处理逻辑
+ * 
+ * @param array $data 包含时间信息的数组
+ * @return int 返回Unix时间戳
+ */
+function parseTimestamp($data)
+{
+    $create_time = time(); // 默认使用当前时间
+    
+    // 优先使用 created_at 字段（夸克网盘API返回的字段）
+    if (isset($data['created_at']) && is_numeric($data['created_at'])) {
+        // 如果是毫秒时间戳，转换为秒
+        $timestamp = $data['created_at'];
+        if ($timestamp > 9999999999) { // 大于10位数字，说明是毫秒时间戳
+            $create_time = intval($timestamp / 1000);
+        } else {
+            $create_time = intval($timestamp);
+        }
+    } elseif (isset($data['updated_at']) && is_numeric($data['updated_at'])) {
+        // 如果是毫秒时间戳，转换为秒
+        $timestamp = $data['updated_at'];
+        if ($timestamp > 9999999999) {
+            $create_time = intval($timestamp / 1000);
+        } else {
+            $create_time = intval($timestamp);
+        }
+    } elseif (isset($data['create_time'])) {
+        // 兼容旧的 create_time 字段
+        if (is_numeric($data['create_time'])) {
+            $timestamp = $data['create_time'];
+            if ($timestamp > 9999999999) {
+                $create_time = intval($timestamp / 1000);
+            } else {
+                $create_time = intval($timestamp);
+            }
+        } elseif (is_string($data['create_time'])) {
+            $parsed_time = strtotime($data['create_time']);
+            if ($parsed_time !== false) {
+                $create_time = $parsed_time;
+            }
+        }
+    } elseif (isset($data['created_at']) && is_string($data['created_at'])) {
+        // 如果是字符串格式的时间
+        $parsed_time = strtotime($data['created_at']);
+        if ($parsed_time !== false) {
+            $create_time = $parsed_time;
+        }
+    } elseif (isset($data['updated_at']) && is_string($data['updated_at'])) {
+        // 如果是字符串格式的时间
+        $parsed_time = strtotime($data['updated_at']);
+        if ($parsed_time !== false) {
+            $create_time = $parsed_time;
+        }
+    }
+    
+    return $create_time;
+}

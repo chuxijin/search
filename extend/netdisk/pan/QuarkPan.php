@@ -405,6 +405,100 @@ class QuarkPan extends BasePan
     }
 
     /**
+     * 创建夸克网盘文件夹
+     *
+     * @return void
+     */
+    public function createFolder()
+    {
+        $folderName = input('folder_name')??'新建文件夹';
+        $parentFid = input('parent_fid')??'0'; // 默认在根目录创建
+        
+        $urlData = [
+            'dir_init_lock' => false,
+            'dir_path' => '',
+            'file_name' => $folderName,
+            'pdir_fid' => $parentFid
+        ];
+        
+        $queryParams = [
+            'pr' => 'ucpro',
+            'fr' => 'pc',
+            'uc_param_str' => ''
+        ];
+        
+        $res = $this->executeApiRequest(
+            "https://drive-pc.quark.cn/1/clouddrive/file", 
+            "POST", 
+            $urlData, 
+            $queryParams
+        );
+        
+        if($res['status'] !== 200){
+            return jerr2($res['message']=='require login [guest]'?'夸克未登录，请检查cookie':$res['message']);
+        }
+        
+        return jok2('文件夹创建成功', $res['data']['fid']);
+    }
+
+    /**
+     * 移动文件到指定文件夹
+     *
+     * @return void
+     */
+    public function moveFiles()
+    {
+        $fileIds = input('file_ids'); // 文件ID数组
+        $targetFolderId = input('target_folder_id'); // 目标文件夹ID
+        
+        if(empty($fileIds) || empty($targetFolderId)){
+            return jerr2("参数不完整，请提供文件ID和目标文件夹ID");
+        }
+        
+        // 如果传入的是字符串，尝试解析为数组
+        if(is_string($fileIds)){
+            // 尝试JSON解析
+            $decoded = json_decode($fileIds, true);
+            if(json_last_error() === JSON_ERROR_NONE){
+                $fileIds = $decoded;
+            } 
+            // 如果不是JSON，尝试逗号分隔的字符串
+            else if(strpos($fileIds, ',') !== false) {
+                $fileIds = explode(',', $fileIds);
+            }
+            // 如果只是单个ID
+            else {
+                $fileIds = [$fileIds];
+            }
+        }
+        
+        $urlData = [
+            'action_type' => 1,
+            'filelist' => $fileIds,
+            'to_pdir_fid' => $targetFolderId
+        ];
+        
+        $queryParams = [
+            'pr' => 'ucpro',
+            'fr' => 'pc',
+            'uc_param_str' => ''
+        ];
+        
+        $res = $this->executeApiRequest(
+            "https://drive-pc.quark.cn/1/clouddrive/file/move", 
+            "POST", 
+            $urlData, 
+            $queryParams
+        );
+        
+        if($res['status'] !== 200){
+            return jerr2($res['message']=='require login [guest]'?'夸克未登录，请检查cookie':$res['message']);
+        }
+        
+        return jok2('文件移动成功', $res['data']);
+    }
+
+    /**
      * 执行API请求并处理重试逻辑
      * 
      * @param string $url 请求URL
