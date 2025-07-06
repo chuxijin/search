@@ -188,15 +188,85 @@ class QuarkPlugin
         // 获取基础存储路径
         $base_folder_id = \Config('qfshop.quark_file');
         
-        // 使用API控制器的文件夹创建逻辑
-        $toolController = new \app\api\controller\Tool();
+        // 直接实现文件夹创建逻辑，避免实例化控制器
+        return $this->createDateFolderStructure($base_folder_id, $create_time);
+    }
+
+    /**
+     * 创建日期文件夹结构 (年/月/日)
+     *
+     * @param string $targetFolderId 目标文件夹ID
+     * @param int $timestamp 时间戳
+     * @return string|false 返回最终日期文件夹ID，失败返回false
+     */
+    private function createDateFolderStructure($targetFolderId, $timestamp)
+    {
+        $year = date('Y', $timestamp);
+        $month = date('n', $timestamp) . '月';
+        $day = date('j', $timestamp) . '日';
         
-        // 使用反射调用私有方法
-        $reflection = new \ReflectionClass($toolController);
-        $createDateFolderMethod = $reflection->getMethod('createDateFolderStructure');
-        $createDateFolderMethod->setAccessible(true);
+        $transfer = new \netdisk\Transfer();
         
-        return $createDateFolderMethod->invoke($toolController, $base_folder_id, $create_time);
+        // 创建年文件夹
+        $yearFolderId = $this->getOrCreateFolder($transfer, $targetFolderId, $year);
+        if ($yearFolderId === false) {
+            return false;
+        }
+        
+        // 创建月文件夹
+        $monthFolderId = $this->getOrCreateFolder($transfer, $yearFolderId, $month);
+        if ($monthFolderId === false) {
+            return false;
+        }
+        
+        // 创建日文件夹
+        $dayFolderId = $this->getOrCreateFolder($transfer, $monthFolderId, $day);
+        
+        return $dayFolderId;
+    }
+    
+    /**
+     * 获取或创建文件夹
+     *
+     * @param object $transfer Transfer对象
+     * @param string $parentFid 父文件夹ID
+     * @param string $folderName 文件夹名称
+     * @return string|false 返回文件夹ID，失败返回false
+     */
+    private function getOrCreateFolder($transfer, $parentFid, $folderName)
+    {
+        // 获取父文件夹下的文件列表
+        $files = $transfer->getFiles(0, $parentFid);
+        
+        if ($files['code'] !== 200) {
+            return false;
+        }
+        
+        // 检查是否已存在同名文件夹
+        foreach ($files['data'] as $file) {
+            if ($file['file_type'] == 0 && $file['file_name'] == $folderName) {
+                return $file['fid'];
+            }
+        }
+        
+        // 文件夹不存在，创建新文件夹
+        $pan = new \netdisk\pan\QuarkPan();
+        
+        // 模拟input参数
+        $_POST['folder_name'] = $folderName;
+        $_POST['parent_fid'] = $parentFid;
+        
+        $result = $pan->createFolder();
+        
+        // 清理临时参数
+        unset($_POST['folder_name']);
+        unset($_POST['parent_fid']);
+        
+        if ($result['code'] === 200) {
+            return $result['data'];
+        }
+        
+        return false;
     }
 
 
