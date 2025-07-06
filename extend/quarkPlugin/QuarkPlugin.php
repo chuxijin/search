@@ -130,9 +130,11 @@ class QuarkPlugin
         // 根据资源创建时间确定目标文件夹
         $target_folder_id = $this->createDateFolders($value);
         if ($target_folder_id === false) {
+            $errorMsg = '创建日期文件夹失败，请查看 quark_plugin_error.log 日志文件获取详细错误信息';
             if (!empty($logId)) {
-                $this->SourceLogModel->editLog($logId, $total_result, 'fail_num', '创建日期文件夹失败');
+                $this->SourceLogModel->editLog($logId, $total_result, 'fail_num', $errorMsg);
             }
+            $this->logError("资源处理失败: {$value['title']} - {$errorMsg}");
             return;
         }
 
@@ -182,14 +184,32 @@ class QuarkPlugin
      */
     private function createDateFolders($value)
     {
-        // 获取资源的创建时间 - 使用统一的时间处理逻辑
-        $create_time = parseTimestamp($value);
-        
-        // 获取基础存储路径
-        $base_folder_id = \Config('qfshop.quark_file');
-        
-        // 直接实现文件夹创建逻辑，避免实例化控制器
-        return $this->createDateFolderStructure($base_folder_id, $create_time);
+        try {
+            // 获取资源的创建时间 - 使用统一的时间处理逻辑
+            $create_time = parseTimestamp($value);
+            
+            // 获取基础存储路径
+            $base_folder_id = \Config('qfshop.quark_file');
+            
+            if ($base_folder_id === null || $base_folder_id === '') {
+                $this->logError('基础存储路径未配置 (qfshop.quark_file)');
+                return false;
+            }
+            
+            // 直接实现文件夹创建逻辑，避免实例化控制器
+            $result = $this->createDateFolderStructure($base_folder_id, $create_time);
+            
+            if ($result === false) {
+                $dateStr = date('Y年n月j日', $create_time);
+                $this->logError("创建日期文件夹结构失败: {$dateStr}");
+            }
+            
+            return $result;
+            
+        } catch (\Exception $e) {
+            $this->logError("创建日期文件夹异常: " . $e->getMessage());
+            return false;
+        }
     }
 
     /**
@@ -205,24 +225,36 @@ class QuarkPlugin
         $month = date('n', $timestamp) . '月';
         $day = date('j', $timestamp) . '日';
         
-        $transfer = new \netdisk\Transfer();
-        
-        // 创建年文件夹
-        $yearFolderId = $this->getOrCreateFolder($transfer, $targetFolderId, $year);
-        if ($yearFolderId === false) {
+        try {
+            $transfer = new \netdisk\Transfer();
+            
+            // 创建年文件夹
+            $yearFolderId = $this->getOrCreateFolder($transfer, $targetFolderId, $year);
+            if ($yearFolderId === false) {
+                $this->logError("创建年文件夹失败: {$year}");
+                return false;
+            }
+            
+            // 创建月文件夹
+            $monthFolderId = $this->getOrCreateFolder($transfer, $yearFolderId, $month);
+            if ($monthFolderId === false) {
+                $this->logError("创建月文件夹失败: {$month}");
+                return false;
+            }
+            
+            // 创建日文件夹
+            $dayFolderId = $this->getOrCreateFolder($transfer, $monthFolderId, $day);
+            if ($dayFolderId === false) {
+                $this->logError("创建日文件夹失败: {$day}");
+                return false;
+            }
+            
+            return $dayFolderId;
+            
+        } catch (\Exception $e) {
+            $this->logError("创建日期文件夹结构异常: " . $e->getMessage());
             return false;
         }
-        
-        // 创建月文件夹
-        $monthFolderId = $this->getOrCreateFolder($transfer, $yearFolderId, $month);
-        if ($monthFolderId === false) {
-            return false;
-        }
-        
-        // 创建日文件夹
-        $dayFolderId = $this->getOrCreateFolder($transfer, $monthFolderId, $day);
-        
-        return $dayFolderId;
     }
     
     /**
@@ -235,39 +267,56 @@ class QuarkPlugin
      */
     private function getOrCreateFolder($transfer, $parentFid, $folderName)
     {
-        // 获取父文件夹下的文件列表
-        $files = $transfer->getFiles(0, $parentFid);
-        
-        if ($files['code'] !== 200) {
+        try {
+            // 获取父文件夹下的文件列表
+            $files = $transfer->getFiles(0, $parentFid);
+            
+            if ($files['code'] !== 200) {
+                $this->logError("获取文件列表失败: {$files['message']} (父文件夹ID: {$parentFid})");
+                return false;
+            }
+            
+            // 检查是否已存在同名文件夹
+            foreach ($files['data'] as $file) {
+                if ($file['file_type'] == 0 && $file['file_name'] == $folderName) {
+                    return $file['fid'];
+                }
+            }
+            
+            // 文件夹不存在，创建新文件夹
+            $pan = new \netdisk\pan\QuarkPan();
+            
+            // 模拟input参数
+            $_POST['folder_name'] = $folderName;
+            $_POST['parent_fid'] = $parentFid;
+            
+            $result = $pan->createFolder();
+            
+            // 清理临时参数
+            unset($_POST['folder_name']);
+            unset($_POST['parent_fid']);
+            
+            if ($result['code'] === 200) {
+                return $result['data'];
+            }
+            
+            $this->logError("创建文件夹失败: {$folderName} - {$result['message']} (父文件夹ID: {$parentFid})");
+            return false;
+            
+        } catch (\Exception $e) {
+            $this->logError("获取或创建文件夹异常: {$folderName} - " . $e->getMessage());
             return false;
         }
-        
-        // 检查是否已存在同名文件夹
-        foreach ($files['data'] as $file) {
-            if ($file['file_type'] == 0 && $file['file_name'] == $folderName) {
-                return $file['fid'];
-            }
-        }
-        
-        // 文件夹不存在，创建新文件夹
-        $pan = new \netdisk\pan\QuarkPan();
-        
-        // 模拟input参数
-        $_POST['folder_name'] = $folderName;
-        $_POST['parent_fid'] = $parentFid;
-        
-        $result = $pan->createFolder();
-        
-        // 清理临时参数
-        unset($_POST['folder_name']);
-        unset($_POST['parent_fid']);
-        
-        if ($result['code'] === 200) {
-            return $result['data'];
-        }
-        
-        return false;
     }
 
-
+    /**
+     * 记录错误日志
+     *
+     * @param string $message 错误消息
+     */
+    private function logError($message)
+    {
+        $logMessage = date('Y-m-d H:i:s') . ' [QuarkPlugin] ' . $message . "\n";
+        file_put_contents('quark_plugin_error.log', $logMessage, FILE_APPEND);
+    }
 }

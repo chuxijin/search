@@ -368,6 +368,11 @@ class Tool extends QfShop
             return $result['data'];
         }
         
+        // 记录详细错误信息
+        $errorMsg = "创建文件夹失败: {$folderName} (父文件夹: {$parentFid}) - {$result['message']}";
+        $logMessage = date('Y-m-d H:i:s') . " [API文件整理] {$errorMsg}\n";
+        file_put_contents('api_organize_error.log', $logMessage, FILE_APPEND);
+        
         return false;
     }
     
