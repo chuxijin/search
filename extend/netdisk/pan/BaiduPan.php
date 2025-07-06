@@ -60,13 +60,17 @@ class BaiduPan extends BasePan
             return jok2('检验成功', $urls);
         }
 
-        $folderName = Config('qfshop.baidu_file'); //默认存储路径
-        if($this->expired_type == 2){
-            $folderName = Config('qfshop.baidu_file_time'); //临时资源路径
-        }
+        if(!empty($this->to_pdir_fid)){
+            $folderName = $this->to_pdir_fid;
+        }else{
+            $folderName = Config('qfshop.baidu_file'); //默认存储路径
+            if($this->expired_type == 2){
+                $folderName = Config('qfshop.baidu_file_time'); //临时资源路径
+            }
 
-        if(empty($folderName)){
-            $folderName = '/心悦转存文件';  // 未设置时默认目录
+            if(empty($folderName)){
+                $folderName = '/心悦转存文件';  // 未设置时默认目录
+            }
         }
 
         // 检查目录名是否包含非法字符

@@ -98,9 +98,13 @@ class AlipanPan extends BasePan
         }
         $share_token = $res['share_token'];
 
-        $to_pdir_fid = Config('qfshop.ali_file'); //默认存储路径
-        if($this->expired_type == 2){
-            $to_pdir_fid = Config('qfshop.ali_file_time'); //临时资源路径
+        if(!empty($this->to_pdir_fid)){
+            $to_pdir_fid = $this->to_pdir_fid;
+        }else{
+            $to_pdir_fid = Config('qfshop.ali_file'); //默认存储路径
+            if($this->expired_type == 2){
+                $to_pdir_fid = Config('qfshop.ali_file_time'); //临时资源路径
+            }
         }
         
         $data3['requests'] = [];

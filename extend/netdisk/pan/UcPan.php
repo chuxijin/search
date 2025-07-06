@@ -216,9 +216,13 @@ class UcPan extends BasePan
      */
     public function getShareSave($pwd_id,$stoken,$fid_list,$fid_token_list)
     {
-        $to_pdir_fid = Config('qfshop.uc_file'); //默认存储路径
-        if($this->expired_type == 2){
-            $to_pdir_fid = Config('qfshop.uc_file_time'); //临时资源路径
+        if(!empty($this->to_pdir_fid)){
+            $to_pdir_fid = $this->to_pdir_fid;
+        }else{
+            $to_pdir_fid = Config('qfshop.uc_file'); //默认存储路径
+            if($this->expired_type == 2){
+                $to_pdir_fid = Config('qfshop.uc_file_time'); //临时资源路径
+            }
         }
         $urlData =  array(
             'fid_list' => $fid_list, 
